@@ -2,6 +2,7 @@
 #include "tools.h"
 #include "Eigen/Dense"
 #include <iostream>
+#include <math.h>
 
 using namespace std;
 using Eigen::MatrixXd;
@@ -37,6 +38,7 @@ FusionEKF::FusionEKF() {
     * Set the process and measurement noises
   */
 
+  
 
 }
 
@@ -61,7 +63,9 @@ void FusionEKF::ProcessMeasurement(const MeasurementPackage &measurement_pack) {
     // first measurement
     cout << "EKF: " << endl;
     ekf_.x_ = VectorXd(4);
-    ekf_.x_ << 1, 1, 1, 1;
+    ekf_.x_ << measurement_pack.raw_measurements_[0], measurement_pack.raw_measurements_[1], 0, 0;
+
+    previous_timestamp_ = measurement_pack.timestamp_;
 
     if (measurement_pack.sensor_type_ == MeasurementPackage::RADAR) {
       /**
@@ -90,6 +94,28 @@ void FusionEKF::ProcessMeasurement(const MeasurementPackage &measurement_pack) {
      * Update the process noise covariance matrix.
      * Use noise_ax = 9 and noise_ay = 9 for your Q matrix.
    */
+  float dt = (measurement_pack.timestamp_ - previous_timestamp_) / (1000 * 1000);
+  previous_timestamp_ = measurement_pack.timestamp_;
+
+  ekf_.F_ = MatrixXd(4,4);
+  ekf_.F_ << 1, 0, dt, 0,
+    0, 1, 0, dt,
+    0, 0, 1, 0,
+    0, 0, 0, 1;
+  ekf_.P_ = MatrixXd(4,4);
+  ekf_.P_ << 1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1000, 0,
+    0, 0, 0, 1000;
+  
+  float noise_ax = 9;
+  float noise_ay = 9;
+
+  ekf_.Q_ = MatrixXd(4, 4);
+  ekf_.Q_ << pow(dt,4)*noise_ax/4, 0, pow(dt,3)*noise_ax/2, 0,
+		0, pow(dt,4)*noise_ay/4, 0, pow(dt,3)*noise_ay/2,
+		pow(dt,3)*noise_ax/2, 0, pow(dt,2)*noise_ax, 0,
+		0, pow(dt,3)*noise_ay/2, 0, pow(dt,2)*noise_ay;
 
   ekf_.Predict();
 
@@ -104,9 +130,16 @@ void FusionEKF::ProcessMeasurement(const MeasurementPackage &measurement_pack) {
    */
 
   if (measurement_pack.sensor_type_ == MeasurementPackage::RADAR) {
-    // Radar updates
+    ekf_.H_ = tools.CalculateJacobian(ekf_.x_);
+    ekf_.UpdateEKF(measurement_pack.raw_measurements_);
   } else {
-    // Laser updates
+    ekf_.H_ = MatrixXd(4,4);
+    ekf_.H_ << 1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0;
+
+    ekf_.Update(measurement_pack.raw_measurements_);
   }
 
   // print the output
